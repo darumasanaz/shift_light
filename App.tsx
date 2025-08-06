@@ -1,17 +1,25 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import DatePicker, { DateObject } from 'react-multi-date-picker';
 
 type Shift = 'E' | 'D' | 'DL' | 'N';
 type Assignment = Shift | 'AK' | 'OFF' | '';
 
-type Staff = {
+type StaffMaster = {
+  id: string;
   name: string;
-  dayOffs: string[];
   days: string[];
   shifts: Shift[];
   maxPerWeek: number;
   exactPerMonth: number;
 };
+
+type MonthlyInput = {
+  staffId: string;
+  month: string; // "YYYY-MM"
+  dayOffs: string[];
+};
+
+type Staff = StaffMaster & { dayOffs: string[] };
 
 const daysOfWeek = ['月', '火', '水', '木', '金', '土', '日'];
 const shiftOptions: Shift[] = ['E', 'D', 'DL', 'N'];
@@ -43,31 +51,59 @@ const formatLabel = (date: Date) => {
 
 function App() {
   const [name, setName] = useState('');
-  const [dayOffDates, setDayOffDates] = useState<DateObject[]>([]);
   const [selectedDays, setSelectedDays] = useState<string[]>([]);
   const [selectedShifts, setSelectedShifts] = useState<Shift[]>([]);
   const [maxPerWeek, setMaxPerWeek] = useState(5);
   const [exactPerMonth, setExactPerMonth] = useState(20);
-  const [staffList, setStaffList] = useState<Staff[]>(() => {
-    const stored = localStorage.getItem('staffList');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [staffMasters, setStaffMasters] = useState<StaffMaster[]>(() => {
+    const stored = localStorage.getItem('staffMasters');
     if (stored) {
       try {
         return JSON.parse(stored);
       } catch (e) {
-        console.error('Failed to parse staffList from localStorage', e);
+        console.error('Failed to parse staffMasters from localStorage', e);
+      }
+    }
+    return [];
+  });
+  const [monthlyInputs, setMonthlyInputs] = useState<MonthlyInput[]>(() => {
+    const stored = localStorage.getItem('monthlyInputs');
+    if (stored) {
+      try {
+        return JSON.parse(stored);
+      } catch (e) {
+        console.error('Failed to parse monthlyInputs from localStorage', e);
       }
     }
     return [];
   });
 
   useEffect(() => {
-    localStorage.setItem('staffList', JSON.stringify(staffList));
-  }, [staffList]);
+    localStorage.setItem('staffMasters', JSON.stringify(staffMasters));
+  }, [staffMasters]);
+
+  useEffect(() => {
+    localStorage.setItem('monthlyInputs', JSON.stringify(monthlyInputs));
+  }, [monthlyInputs]);
 
   const today = new Date();
   const nextMonthDate = new Date(today.getFullYear(), today.getMonth() + 1, 1);
   const [targetYear, setTargetYear] = useState(nextMonthDate.getFullYear());
   const [targetMonth, setTargetMonth] = useState(nextMonthDate.getMonth());
+  const monthKey = `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}`;
+
+  const staffList: Staff[] = useMemo(
+    () =>
+      staffMasters.map(s => ({
+        ...s,
+        dayOffs:
+          monthlyInputs.find(
+            mi => mi.staffId === s.id && mi.month === monthKey
+          )?.dayOffs || [],
+      })),
+    [staffMasters, monthlyInputs, monthKey]
+  );
 
   const checkSupplyDemand = () => {
     const year = targetYear;
@@ -123,27 +159,64 @@ function App() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const newStaff: Staff = {
+    const base: StaffMaster = {
+      id: editingId ?? crypto.randomUUID(),
       name,
-      dayOffs: dayOffDates.map(d => d.format('YYYY-MM-DD')),
       days: selectedDays,
       shifts: selectedShifts,
       maxPerWeek,
       exactPerMonth,
     };
-    setStaffList(prev => [...prev, newStaff]);
+    setStaffMasters(prev => {
+      if (editingId) return prev.map(s => (s.id === editingId ? base : s));
+      return [...prev, base];
+    });
 
     // reset
+    setEditingId(null);
     setName('');
-    setDayOffDates([]);
     setSelectedDays([]);
     setSelectedShifts([]);
     setMaxPerWeek(5);
     setExactPerMonth(20);
   };
 
-  const handleDeleteStaff = (index: number) => {
-    setStaffList(prev => prev.filter((_, i) => i !== index));
+  const handleDeleteStaff = (id: string) => {
+    setStaffMasters(prev => prev.filter(s => s.id !== id));
+    setMonthlyInputs(prev => prev.filter(mi => mi.staffId !== id));
+  };
+
+  const handleEditStaff = (id: string) => {
+    const s = staffMasters.find(st => st.id === id);
+    if (!s) return;
+    setEditingId(id);
+    setName(s.name);
+    setSelectedDays(s.days);
+    setSelectedShifts(s.shifts);
+    setMaxPerWeek(s.maxPerWeek);
+    setExactPerMonth(s.exactPerMonth);
+  };
+
+  const getDayOffDates = (staffId: string): DateObject[] => {
+    const entry = monthlyInputs.find(
+      mi => mi.staffId === staffId && mi.month === monthKey
+    );
+    return entry ? entry.dayOffs.map(d => new DateObject(d)) : [];
+  };
+
+  const handleDayOffChange = (staffId: string, dates: DateObject[]) => {
+    const dayOffs = dates.map(d => d.format('YYYY-MM-DD'));
+    setMonthlyInputs(prev => {
+      const idx = prev.findIndex(
+        mi => mi.staffId === staffId && mi.month === monthKey
+      );
+      if (idx >= 0) {
+        const updated = [...prev];
+        updated[idx] = { ...updated[idx], dayOffs };
+        return updated;
+      }
+      return [...prev, { staffId, month: monthKey, dayOffs }];
+    });
   };
 
   const generateShiftTable = () => {
@@ -375,19 +448,6 @@ function App() {
         </div>
         <div>
           <label>
-            希望休:
-            <DatePicker
-              multiple
-              value={dayOffDates}
-              onChange={setDayOffDates}
-              format="YYYY-MM-DD"
-              sort
-              style={{ width: '100%' }}
-            />
-          </label>
-        </div>
-        <div>
-          <label>
             最大勤務回数/週:
             <input
               type="number"
@@ -444,18 +504,38 @@ function App() {
             </label>
           ))}
         </div>
-        <button type="submit">登録</button>
+        <button type="submit">{editingId ? '更新' : '登録'}</button>
       </form>
       <h2>登録済みスタッフ一覧</h2>
       <ul>
-        {staffList.map((staff, index) => (
-          <li key={index}>
-            {staff.name} (希望休: {staff.dayOffs.length ? staff.dayOffs.join('、') : 'なし'})<br />
+        {staffMasters.map(staff => (
+          <li key={staff.id}>
+            {staff.name}<br />
             働ける曜日: {staff.days.join('、') || 'なし'}<br />
             働ける時間帯: {staff.shifts.join('、') || 'なし'}<br />
             最大勤務回数/週: {staff.maxPerWeek}<br />
             勤務日数/月: {staff.exactPerMonth}<br />
-            <button onClick={() => handleDeleteStaff(index)}>削除</button>
+            <button onClick={() => handleEditStaff(staff.id)}>編集</button>
+            <button onClick={() => handleDeleteStaff(staff.id)}>削除</button>
+          </li>
+        ))}
+      </ul>
+
+      <h2>希望休入力（{targetYear}年{targetMonth + 1}月）</h2>
+      <ul>
+        {staffMasters.map(staff => (
+          <li key={staff.id}>
+            {staff.name}:
+            <DatePicker
+              multiple
+              value={getDayOffDates(staff.id)}
+              onChange={dates =>
+                handleDayOffChange(staff.id, dates as DateObject[])
+              }
+              format="YYYY-MM-DD"
+              sort
+              style={{ width: '100%' }}
+            />
           </li>
         ))}
       </ul>
