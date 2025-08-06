@@ -77,12 +77,21 @@ function App() {
   const exportShiftCSV = (
     assignments: Record<string, Record<string, string>>
   ) => {
-    const header = ['名前', ...daysOfWeek];
+    const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+    const dates = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() + i);
+      const dayName = dayNames[d.getDay()];
+      const label = `${d.getMonth() + 1}/${d.getDate()}(${dayName})`;
+      return { dayName, label };
+    });
+
+    const header = ['名前', ...dates.map(d => d.label)];
     const rows: string[][] = [header];
     staffList.forEach(staff => {
       const row = [
         staff.name,
-        ...daysOfWeek.map(day => assignments[staff.name]?.[day] || ''),
+        ...dates.map(d => assignments[staff.name]?.[d.dayName] || ''),
       ];
       rows.push(row);
     });
