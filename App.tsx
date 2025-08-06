@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
+import DatePicker, { DateObject } from 'react-multi-date-picker';
 
 type Shift = 'E' | 'D' | 'DL' | 'N';
 type Assignment = Shift | 'OFF' | '';
 
 type Staff = {
   name: string;
-  dayOff: string;
+  dayOffs: string[];
   days: string[];
   shifts: Shift[];
   maxPerWeek: number;
@@ -31,7 +32,7 @@ const formatLabel = (date: Date) => {
 
 function App() {
   const [name, setName] = useState('');
-  const [dayOff, setDayOff] = useState('');
+  const [dayOffs, setDayOffs] = useState<string[]>([]);
   const [selectedDays, setSelectedDays] = useState<string[]>([]);
   const [selectedShifts, setSelectedShifts] = useState<Shift[]>([]);
   const [maxPerWeek, setMaxPerWeek] = useState(5);
@@ -49,11 +50,19 @@ function App() {
     );
   };
 
+  const handleDayOffChange = (dates: DateObject[] | DateObject | null) => {
+    if (!dates) return setDayOffs([]);
+    const arr = (Array.isArray(dates) ? dates : [dates]).map(d =>
+      `${String(d.month.number).padStart(2, '0')}/${String(d.day).padStart(2, '0')}`
+    );
+    setDayOffs(arr);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const newStaff: Staff = {
       name,
-      dayOff,
+      dayOffs,
       days: selectedDays,
       shifts: selectedShifts,
       maxPerWeek,
@@ -62,7 +71,7 @@ function App() {
 
     // reset
     setName('');
-    setDayOff('');
+    setDayOffs([]);
     setSelectedDays([]);
     setSelectedShifts([]);
     setMaxPerWeek(5);
@@ -180,7 +189,13 @@ function App() {
         <div>
           <label>
             希望休:
-            <input value={dayOff} onChange={e => setDayOff(e.target.value)} />
+            <DatePicker
+              multiple
+              value={dayOffs}
+              onChange={handleDayOffChange}
+              format="MM/DD"
+              style={{ width: '100%' }}
+            />
           </label>
         </div>
         <div>
@@ -227,7 +242,7 @@ function App() {
       <ul>
         {staffList.map((staff, index) => (
           <li key={index}>
-            {staff.name} (希望休: {staff.dayOff})<br />
+            {staff.name} (希望休: {staff.dayOffs.length ? staff.dayOffs.join('、') : 'なし'})<br />
             働ける曜日: {staff.days.join('、') || 'なし'}<br />
             働ける時間帯: {staff.shifts.join('、') || 'なし'}<br />
             最大勤務回数/週: {staff.maxPerWeek}
