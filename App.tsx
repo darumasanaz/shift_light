@@ -46,6 +46,62 @@ function App() {
     setSelectedShifts([]);
   };
 
+  const generateShiftTable = () => {
+    const assignments: Record<string, Record<string, string>> = {};
+    staffList.forEach(staff => {
+      assignments[staff.name] = {};
+      daysOfWeek.forEach(day => {
+        assignments[staff.name][day] = '';
+      });
+    });
+
+    daysOfWeek.forEach(day => {
+      shifts.forEach(shift => {
+        const candidates = staffList.filter(
+          s =>
+            s.days.includes(day) &&
+            s.shifts.includes(shift) &&
+            assignments[s.name][day] === ''
+        );
+        if (candidates.length > 0) {
+          const chosen =
+            candidates[Math.floor(Math.random() * candidates.length)];
+          assignments[chosen.name][day] = shift;
+        }
+      });
+    });
+
+    return assignments;
+  };
+
+  const exportShiftCSV = (
+    assignments: Record<string, Record<string, string>>
+  ) => {
+    const header = ['名前', ...daysOfWeek];
+    const rows: string[][] = [header];
+    staffList.forEach(staff => {
+      const row = [
+        staff.name,
+        ...daysOfWeek.map(day => assignments[staff.name]?.[day] || ''),
+      ];
+      rows.push(row);
+    });
+
+    const csvContent = rows.map(r => r.join(',')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'shiftTable.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExport = () => {
+    const table = generateShiftTable();
+    exportShiftCSV(table);
+  };
+
   return (
     <div>
       <h1>スタッフ情報入力</h1>
@@ -100,6 +156,7 @@ function App() {
           </li>
         ))}
       </ul>
+      <button onClick={handleExport}>シフト表CSV出力</button>
     </div>
   );
 }
