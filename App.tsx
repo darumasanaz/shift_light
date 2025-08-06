@@ -32,11 +32,16 @@ const formatLabel = (date: Date) => {
 
 function App() {
   const [name, setName] = useState('');
-  const [dayOffs, setDayOffs] = useState<string[]>([]);
+  const [dayOffDates, setDayOffDates] = useState<DateObject[]>([]);
   const [selectedDays, setSelectedDays] = useState<string[]>([]);
   const [selectedShifts, setSelectedShifts] = useState<Shift[]>([]);
   const [maxPerWeek, setMaxPerWeek] = useState(5);
   const [staffList, setStaffList] = useState<Staff[]>([]);
+
+  const today = new Date();
+  const nextMonthDate = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+  const [targetYear, setTargetYear] = useState(nextMonthDate.getFullYear());
+  const [targetMonth, setTargetMonth] = useState(nextMonthDate.getMonth());
 
   const handleDayChange = (day: string) => {
     setSelectedDays(prev =>
@@ -50,19 +55,11 @@ function App() {
     );
   };
 
-  const handleDayOffChange = (dates: DateObject[] | DateObject | null) => {
-    if (!dates) return setDayOffs([]);
-    const arr = (Array.isArray(dates) ? dates : [dates]).map(d =>
-      `${String(d.month.number).padStart(2, '0')}/${String(d.day).padStart(2, '0')}`
-    );
-    setDayOffs(arr);
-  };
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const newStaff: Staff = {
       name,
-      dayOffs,
+      dayOffs: dayOffDates.map(d => d.format('YYYY-MM-DD')),
       days: selectedDays,
       shifts: selectedShifts,
       maxPerWeek,
@@ -71,16 +68,15 @@ function App() {
 
     // reset
     setName('');
-    setDayOffs([]);
+    setDayOffDates([]);
     setSelectedDays([]);
     setSelectedShifts([]);
     setMaxPerWeek(5);
   };
 
   const generateShiftTable = () => {
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = today.getMonth();
+    const year = targetYear;
+    const month = targetMonth;
     const daysInMonth = getDaysInMonth(year, month);
     const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
 
@@ -178,6 +174,32 @@ function App() {
 
   return (
     <div>
+      <div>
+        <label>
+          作成対象月：
+          <select
+            value={`${targetYear}-${targetMonth}`}
+            onChange={e => {
+              const [y, m] = e.target.value.split('-').map(Number);
+              setTargetYear(y);
+              setTargetMonth(m);
+            }}
+          >
+            {Array.from({ length: 12 }).map((_, i) => {
+              const d = new Date(
+                nextMonthDate.getFullYear(),
+                nextMonthDate.getMonth() + i,
+                1
+              );
+              return (
+                <option key={i} value={`${d.getFullYear()}-${d.getMonth()}`}>
+                  {d.getFullYear()}年{d.getMonth() + 1}月
+                </option>
+              );
+            })}
+          </select>
+        </label>
+      </div>
       <h1>スタッフ情報入力</h1>
       <form onSubmit={handleSubmit}>
         <div>
@@ -191,9 +213,10 @@ function App() {
             希望休:
             <DatePicker
               multiple
-              value={dayOffs}
-              onChange={handleDayOffChange}
-              format="MM/DD"
+              value={dayOffDates}
+              onChange={setDayOffDates}
+              format="YYYY-MM-DD"
+              sort
               style={{ width: '100%' }}
             />
           </label>
@@ -232,7 +255,15 @@ function App() {
                 checked={selectedShifts.includes(shift)}
                 onChange={() => handleShiftChange(shift)}
               />
-              {shift}
+              {`${shift}（${
+                shift === 'E'
+                  ? '早番'
+                  : shift === 'D'
+                  ? '日勤'
+                  : shift === 'DL'
+                  ? '昼遅番'
+                  : '夜勤'
+              }）`}
             </label>
           ))}
         </div>
