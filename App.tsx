@@ -10,6 +10,7 @@ type Staff = {
   days: string[];
   shifts: Shift[];
   maxPerWeek: number;
+  exactPerMonth: number;
 };
 
 const daysOfWeek = ['月', '火', '水', '木', '金', '土', '日'];
@@ -36,6 +37,7 @@ function App() {
   const [selectedDays, setSelectedDays] = useState<string[]>([]);
   const [selectedShifts, setSelectedShifts] = useState<Shift[]>([]);
   const [maxPerWeek, setMaxPerWeek] = useState(5);
+  const [exactPerMonth, setExactPerMonth] = useState(20);
   const [staffList, setStaffList] = useState<Staff[]>([]);
 
   const today = new Date();
@@ -63,6 +65,7 @@ function App() {
       days: selectedDays,
       shifts: selectedShifts,
       maxPerWeek,
+      exactPerMonth,
     };
     setStaffList(prev => [...prev, newStaff]);
 
@@ -72,6 +75,7 @@ function App() {
     setSelectedDays([]);
     setSelectedShifts([]);
     setMaxPerWeek(5);
+    setExactPerMonth(20);
   };
 
   const generateShiftTable = () => {
@@ -86,9 +90,11 @@ function App() {
 
     const assignments: Record<string, Record<number, Assignment>> = {};
     const weeklyCounts: Record<string, Record<number, number>> = {};
+    const monthlyCounts: Record<string, number> = {};
     staffList.forEach(staff => {
       assignments[staff.name] = {};
       weeklyCounts[staff.name] = {};
+      monthlyCounts[staff.name] = 0;
       for (let d = 1; d <= daysInMonth; d++) {
         assignments[staff.name][d] = '';
       }
@@ -98,6 +104,13 @@ function App() {
       const date = new Date(year, month, d);
       const weekIndex = getWeekIndex(date);
       const dayName = weekdays[date.getDay()];
+      const dateStr = date.toISOString().split('T')[0];
+
+      staffList.forEach(s => {
+        if (s.dayOffs.includes(dateStr)) {
+          assignments[s.name][d] = 'OFF';
+        }
+      });
 
       if (d > 1) {
         staffList.forEach(s => {
@@ -111,6 +124,7 @@ function App() {
         const candidates = staffList.filter(s => {
           if (assignments[s.name][d] !== '') return false;
           if (!s.days.includes(dayName)) return false;
+          if (monthlyCounts[s.name] >= s.exactPerMonth) return false;
           const prev = assignments[s.name][d - 1];
           if (shift === 'E') {
             if (!s.shifts.includes('E')) return false;
@@ -125,8 +139,24 @@ function App() {
         });
 
         if (candidates.length > 0) {
+          const withProgress = candidates.map(s => ({
+            staff: s,
+            progress:
+              (monthlyCounts[s.name] || 0) / s.exactPerMonth,
+          }));
+          const minProgress = Math.min(
+            ...withProgress.map(c => c.progress)
+          );
+          const top = withProgress
+            .filter(c => c.progress === minProgress)
+            .sort(
+              (a, b) => a.staff.exactPerMonth - b.staff.exactPerMonth
+            );
+          const sameTarget = top.filter(
+            t => t.staff.exactPerMonth === top[0].staff.exactPerMonth
+          );
           const chosen =
-            candidates[Math.floor(Math.random() * candidates.length)];
+            sameTarget[Math.floor(Math.random() * sameTarget.length)].staff;
           let assignedShift: Assignment = shift;
           if (shift === 'D') {
             assignedShift = chosen.shifts.includes('D') ? 'D' : 'DL';
@@ -134,11 +164,20 @@ function App() {
           assignments[chosen.name][d] = assignedShift;
           weeklyCounts[chosen.name][weekIndex] =
             (weeklyCounts[chosen.name][weekIndex] || 0) + 1;
+          monthlyCounts[chosen.name] = (monthlyCounts[chosen.name] || 0) + 1;
         } else {
           console.warn(`${d}日 ${shift === 'D' ? 'D/DL' : shift} の候補者が0人です`);
         }
       });
     }
+
+    staffList.forEach(s => {
+      if (monthlyCounts[s.name] !== s.exactPerMonth) {
+        console.warn(
+          `${s.name}：勤務日数が${monthlyCounts[s.name]}日で止まりました`
+        );
+      }
+    });
 
     return { assignments, labels };
   };
@@ -234,6 +273,18 @@ function App() {
           </label>
         </div>
         <div>
+          <label>
+            最大勤務日数/月:
+            <input
+              type="number"
+              min={1}
+              value={exactPerMonth}
+              required
+              onChange={e => setExactPerMonth(Number(e.target.value))}
+            />
+          </label>
+        </div>
+        <div>
           働ける曜日:
           {daysOfWeek.map(day => (
             <label key={day} style={{ marginRight: '4px' }}>
@@ -276,7 +327,8 @@ function App() {
             {staff.name} (希望休: {staff.dayOffs.length ? staff.dayOffs.join('、') : 'なし'})<br />
             働ける曜日: {staff.days.join('、') || 'なし'}<br />
             働ける時間帯: {staff.shifts.join('、') || 'なし'}<br />
-            最大勤務回数/週: {staff.maxPerWeek}
+            最大勤務回数/週: {staff.maxPerWeek}<br />
+            最大勤務日数/月: {staff.exactPerMonth}
           </li>
         ))}
       </ul>
