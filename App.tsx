@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import DatePicker, { DateObject } from 'react-multi-date-picker';
 
 type Shift = 'E' | 'D' | 'DL' | 'N';
@@ -48,7 +48,21 @@ function App() {
   const [selectedShifts, setSelectedShifts] = useState<Shift[]>([]);
   const [maxPerWeek, setMaxPerWeek] = useState(5);
   const [exactPerMonth, setExactPerMonth] = useState(20);
-  const [staffList, setStaffList] = useState<Staff[]>([]);
+  const [staffList, setStaffList] = useState<Staff[]>(() => {
+    const stored = localStorage.getItem('staffList');
+    if (stored) {
+      try {
+        return JSON.parse(stored);
+      } catch (e) {
+        console.error('Failed to parse staffList from localStorage', e);
+      }
+    }
+    return [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('staffList', JSON.stringify(staffList));
+  }, [staffList]);
 
   const today = new Date();
   const nextMonthDate = new Date(today.getFullYear(), today.getMonth() + 1, 1);
@@ -86,6 +100,10 @@ function App() {
     setSelectedShifts([]);
     setMaxPerWeek(5);
     setExactPerMonth(20);
+  };
+
+  const handleDeleteStaff = (index: number) => {
+    setStaffList(prev => prev.filter((_, i) => i !== index));
   };
 
   const generateShiftTable = () => {
@@ -395,7 +413,8 @@ function App() {
             働ける曜日: {staff.days.join('、') || 'なし'}<br />
             働ける時間帯: {staff.shifts.join('、') || 'なし'}<br />
             最大勤務回数/週: {staff.maxPerWeek}<br />
-            勤務日数/月: {staff.exactPerMonth}
+            勤務日数/月: {staff.exactPerMonth}<br />
+            <button onClick={() => handleDeleteStaff(index)}>削除</button>
           </li>
         ))}
       </ul>
