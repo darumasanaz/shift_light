@@ -10,6 +10,14 @@ type Staff = {
 const daysOfWeek = ['月', '火', '水', '木', '金', '土', '日'];
 const shifts = ['早番', '遅番', '夜勤'];
 
+const getDaysInMonth = (year: number, month: number) =>
+  new Date(year, month + 1, 0).getDate();
+
+const formatLabel = (date: Date) => {
+  const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
+  return `${date.getMonth() + 1}/${date.getDate()}(${weekdays[date.getDay()]})`;
+};
+
 function App() {
   const [name, setName] = useState('');
   const [dayOff, setDayOff] = useState('');
@@ -47,51 +55,55 @@ function App() {
   };
 
   const generateShiftTable = () => {
-    const assignments: Record<string, Record<string, string>> = {};
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = today.getMonth();
+    const daysInMonth = getDaysInMonth(year, month);
+    const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
+
+    const labels = Array.from({ length: daysInMonth }, (_, i) =>
+      formatLabel(new Date(year, month, i + 1))
+    );
+
+    const assignments: Record<string, Record<number, string>> = {};
     staffList.forEach(staff => {
       assignments[staff.name] = {};
-      daysOfWeek.forEach(day => {
-        assignments[staff.name][day] = '';
-      });
+      for (let d = 1; d <= daysInMonth; d++) {
+        assignments[staff.name][d] = '';
+      }
     });
 
-    daysOfWeek.forEach(day => {
+    for (let d = 1; d <= daysInMonth; d++) {
+      const date = new Date(year, month, d);
+      const dayName = weekdays[date.getDay()];
       shifts.forEach(shift => {
         const candidates = staffList.filter(
           s =>
-            s.days.includes(day) &&
+            s.days.includes(dayName) &&
             s.shifts.includes(shift) &&
-            assignments[s.name][day] === ''
+            assignments[s.name][d] === ''
         );
         if (candidates.length > 0) {
           const chosen =
             candidates[Math.floor(Math.random() * candidates.length)];
-          assignments[chosen.name][day] = shift;
+          assignments[chosen.name][d] = shift;
         }
       });
-    });
+    }
 
-    return assignments;
+    return { assignments, labels };
   };
 
   const exportShiftCSV = (
-    assignments: Record<string, Record<string, string>>
+    assignments: Record<string, Record<number, string>>,
+    labels: string[]
   ) => {
-    const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
-    const dates = Array.from({ length: 7 }, (_, i) => {
-      const d = new Date();
-      d.setDate(d.getDate() + i);
-      const dayName = dayNames[d.getDay()];
-      const label = `${d.getMonth() + 1}/${d.getDate()}(${dayName})`;
-      return { dayName, label };
-    });
-
-    const header = ['名前', ...dates.map(d => d.label)];
+    const header = ['名前', ...labels];
     const rows: string[][] = [header];
     staffList.forEach(staff => {
       const row = [
         staff.name,
-        ...dates.map(d => assignments[staff.name]?.[d.dayName] || ''),
+        ...labels.map((_, idx) => assignments[staff.name]?.[idx + 1] || ''),
       ];
       rows.push(row);
     });
@@ -107,8 +119,8 @@ function App() {
   };
 
   const handleExport = () => {
-    const table = generateShiftTable();
-    exportShiftCSV(table);
+    const { assignments, labels } = generateShiftTable();
+    exportShiftCSV(assignments, labels);
   };
 
   return (
