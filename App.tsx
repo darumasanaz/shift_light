@@ -69,6 +69,46 @@ function App() {
   const [targetYear, setTargetYear] = useState(nextMonthDate.getFullYear());
   const [targetMonth, setTargetMonth] = useState(nextMonthDate.getMonth());
 
+  const checkSupplyDemand = () => {
+    const year = targetYear;
+    const month = targetMonth;
+    const daysInMonth = getDaysInMonth(year, month);
+    const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
+
+    const demand = { E: 0, D: 0, N: 0 };
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dayName = weekdays[new Date(year, month, d).getDay()];
+      const daily = demandPerWeekday[dayName];
+      demand.E += daily.E;
+      demand.D += daily.D;
+      demand.N += daily.N;
+    }
+
+    const supply = { E: 0, D: 0, N: 0 };
+    staffList.forEach(s => {
+      let night = 0;
+      if (s.shifts.includes('N')) {
+        night = Math.floor(s.exactPerMonth / 2);
+        supply.N += night;
+      }
+      const remaining = s.exactPerMonth - night * 2;
+      if (s.shifts.includes('E')) supply.E += remaining;
+      if (s.shifts.includes('D')) supply.D += remaining;
+    });
+
+    (['E', 'D', 'N'] as const).forEach(shift => {
+      if (demand[shift] > supply[shift]) {
+        console.warn(
+          `⚠️ 供給不足: ${shift} があと${demand[shift] - supply[shift]}日分足りません`
+        );
+      }
+    });
+  };
+
+  useEffect(() => {
+    checkSupplyDemand();
+  }, [staffList, targetYear, targetMonth]);
+
   const handleDayChange = (day: string) => {
     setSelectedDays(prev =>
       prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
@@ -107,6 +147,7 @@ function App() {
   };
 
   const generateShiftTable = () => {
+    checkSupplyDemand();
     const year = targetYear;
     const month = targetMonth;
     const daysInMonth = getDaysInMonth(year, month);
