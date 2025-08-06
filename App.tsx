@@ -5,6 +5,7 @@ type Staff = {
   dayOff: string;
   days: string[];
   shifts: string[];
+  maxPerWeek: number;
 };
 
 const daysOfWeek = ['月', '火', '水', '木', '金', '土', '日'];
@@ -12,6 +13,12 @@ const shifts = ['早番', '遅番', '夜勤'];
 
 const getDaysInMonth = (year: number, month: number) =>
   new Date(year, month + 1, 0).getDate();
+
+const getWeekIndex = (date: Date) => {
+  const first = new Date(date.getFullYear(), date.getMonth(), 1);
+  const offset = (first.getDay() + 6) % 7; // 月曜=0
+  return Math.floor((date.getDate() + offset - 1) / 7);
+};
 
 const formatLabel = (date: Date) => {
   const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
@@ -23,6 +30,7 @@ function App() {
   const [dayOff, setDayOff] = useState('');
   const [selectedDays, setSelectedDays] = useState<string[]>([]);
   const [selectedShifts, setSelectedShifts] = useState<string[]>([]);
+  const [maxPerWeek, setMaxPerWeek] = useState(5);
   const [staffList, setStaffList] = useState<Staff[]>([]);
 
   const handleDayChange = (day: string) => {
@@ -44,6 +52,7 @@ function App() {
       dayOff,
       days: selectedDays,
       shifts: selectedShifts,
+      maxPerWeek,
     };
     setStaffList(prev => [...prev, newStaff]);
 
@@ -52,6 +61,7 @@ function App() {
     setDayOff('');
     setSelectedDays([]);
     setSelectedShifts([]);
+    setMaxPerWeek(5);
   };
 
   const generateShiftTable = () => {
@@ -66,8 +76,10 @@ function App() {
     );
 
     const assignments: Record<string, Record<number, string>> = {};
+    const weeklyCounts: Record<string, Record<number, number>> = {};
     staffList.forEach(staff => {
       assignments[staff.name] = {};
+      weeklyCounts[staff.name] = {};
       for (let d = 1; d <= daysInMonth; d++) {
         assignments[staff.name][d] = '';
       }
@@ -75,18 +87,22 @@ function App() {
 
     for (let d = 1; d <= daysInMonth; d++) {
       const date = new Date(year, month, d);
+       const weekIndex = getWeekIndex(date);
       const dayName = weekdays[date.getDay()];
       shifts.forEach(shift => {
         const candidates = staffList.filter(
           s =>
             s.days.includes(dayName) &&
             s.shifts.includes(shift) &&
-            assignments[s.name][d] === ''
+            assignments[s.name][d] === '' &&
+            (weeklyCounts[s.name][weekIndex] || 0) < s.maxPerWeek
         );
         if (candidates.length > 0) {
           const chosen =
             candidates[Math.floor(Math.random() * candidates.length)];
           assignments[chosen.name][d] = shift;
+          weeklyCounts[chosen.name][weekIndex] =
+            (weeklyCounts[chosen.name][weekIndex] || 0) + 1;
         }
       });
     }
@@ -140,6 +156,18 @@ function App() {
           </label>
         </div>
         <div>
+          <label>
+            最大勤務回数/週:
+            <input
+              type="number"
+              min={1}
+              max={7}
+              value={maxPerWeek}
+              onChange={e => setMaxPerWeek(Number(e.target.value))}
+            />
+          </label>
+        </div>
+        <div>
           働ける曜日:
           {daysOfWeek.map(day => (
             <label key={day} style={{ marginRight: '4px' }}>
@@ -173,7 +201,8 @@ function App() {
           <li key={index}>
             {staff.name} (希望休: {staff.dayOff})<br />
             働ける曜日: {staff.days.join('、') || 'なし'}<br />
-            働ける時間帯: {staff.shifts.join('、') || 'なし'}
+            働ける時間帯: {staff.shifts.join('、') || 'なし'}<br />
+            最大勤務回数/週: {staff.maxPerWeek}
           </li>
         ))}
       </ul>
