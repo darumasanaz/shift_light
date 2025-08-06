@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import DatePicker, { DateObject } from 'react-multi-date-picker';
 
 type Shift = 'E' | 'D' | 'DL' | 'N';
-type Assignment = Shift | 'OFF' | '';
+type Assignment = Shift | 'AK' | 'OFF' | '';
 
 type Staff = {
   name: string;
@@ -91,6 +91,7 @@ function App() {
     const assignments: Record<string, Record<number, Assignment>> = {};
     const weeklyCounts: Record<string, Record<number, number>> = {};
     const monthlyCounts: Record<string, number> = {};
+
     staffList.forEach(staff => {
       assignments[staff.name] = {};
       weeklyCounts[staff.name] = {};
@@ -100,82 +101,116 @@ function App() {
       }
     });
 
+    // Set requested day offs
     for (let d = 1; d <= daysInMonth; d++) {
       const date = new Date(year, month, d);
-      const weekIndex = getWeekIndex(date);
-      const dayName = weekdays[date.getDay()];
       const dateStr = date.toISOString().split('T')[0];
-
       staffList.forEach(s => {
         if (s.dayOffs.includes(dateStr)) {
           assignments[s.name][d] = 'OFF';
         }
       });
+    }
 
-      if (d > 1) {
-        staffList.forEach(s => {
-          if (assignments[s.name][d - 1] === 'N') {
-            assignments[s.name][d] = 'OFF';
+    const assignShift = (d: number, shift: 'E' | 'D' | 'N') => {
+      const date = new Date(year, month, d);
+      const weekIndex = getWeekIndex(date);
+      const dayName = weekdays[date.getDay()];
+
+      const candidates = staffList.filter(s => {
+        if (assignments[s.name][d] !== '') return false;
+        if (!s.days.includes(dayName)) return false;
+
+        const remaining = s.exactPerMonth - (monthlyCounts[s.name] || 0);
+        if (remaining <= 0) return false;
+
+        if (shift === 'E') {
+          if (!s.shifts.includes('E')) return false;
+          const prev = assignments[s.name][d - 1];
+          if (prev === 'D' || prev === 'DL') return false;
+        } else if (shift === 'D') {
+          if (!s.shifts.includes('D') && !s.shifts.includes('DL'))
+            return false;
+        } else if (shift === 'N') {
+          if (!s.shifts.includes('N')) return false;
+          if (d === daysInMonth) return false;
+          if (assignments[s.name][d + 1] !== '') return false;
+          const nextDate = new Date(year, month, d + 1);
+          const nextWeekIndex = getWeekIndex(nextDate);
+          if ((weeklyCounts[s.name][nextWeekIndex] || 0) >= s.maxPerWeek)
+            return false;
+          if (remaining < 2) return false;
+        }
+
+        if ((weeklyCounts[s.name][weekIndex] || 0) >= s.maxPerWeek)
+          return false;
+
+        return true;
+      });
+
+      if (candidates.length === 0) return;
+
+      candidates.sort((a, b) => {
+        const remA = a.exactPerMonth - (monthlyCounts[a.name] || 0);
+        const remB = b.exactPerMonth - (monthlyCounts[b.name] || 0);
+        if (remB !== remA) return remB - remA;
+        const weekA =
+          a.maxPerWeek - (weeklyCounts[a.name][weekIndex] || 0);
+        const weekB =
+          b.maxPerWeek - (weeklyCounts[b.name][weekIndex] || 0);
+        if (weekB !== weekA) return weekB - weekA;
+        return Math.random() - 0.5;
+      });
+
+      const chosen = candidates[0];
+      let assignedShift: Assignment = shift;
+      if (shift === 'D') {
+        assignedShift = chosen.shifts.includes('D') ? 'D' : 'DL';
+      }
+      assignments[chosen.name][d] = assignedShift;
+      weeklyCounts[chosen.name][weekIndex] =
+        (weeklyCounts[chosen.name][weekIndex] || 0) + 1;
+      monthlyCounts[chosen.name] = (monthlyCounts[chosen.name] || 0) + 1;
+
+      if (shift === 'N') {
+        const nextDate = new Date(year, month, d + 1);
+        const nextWeekIndex = getWeekIndex(nextDate);
+        assignments[chosen.name][d + 1] = 'AK';
+        weeklyCounts[chosen.name][nextWeekIndex] =
+          (weeklyCounts[chosen.name][nextWeekIndex] || 0) + 1;
+        monthlyCounts[chosen.name] = (monthlyCounts[chosen.name] || 0) + 1;
+      }
+    };
+
+    // Pass1
+    for (let d = 1; d <= daysInMonth; d++) {
+      shiftOrder.forEach(shift => assignShift(d, shift));
+    }
+
+    // Pass2 if some staff still have remaining days
+    const hasRemaining = staffList.some(
+      s => s.exactPerMonth - (monthlyCounts[s.name] || 0) > 0
+    );
+
+    if (hasRemaining) {
+      for (let d = 1; d <= daysInMonth; d++) {
+        shiftOrder.forEach(shift => {
+          const already = staffList.some(s => {
+            const a = assignments[s.name][d];
+            if (shift === 'D') return a === 'D' || a === 'DL';
+            return a === shift;
+          });
+          if (!already) {
+            assignShift(d, shift);
           }
         });
       }
-
-      shiftOrder.forEach(shift => {
-        const candidates = staffList.filter(s => {
-          if (assignments[s.name][d] !== '') return false;
-          if (!s.days.includes(dayName)) return false;
-          if (monthlyCounts[s.name] >= s.exactPerMonth) return false;
-          const prev = assignments[s.name][d - 1];
-          if (shift === 'E') {
-            if (!s.shifts.includes('E')) return false;
-            if (prev === 'D' || prev === 'DL') return false;
-          } else if (shift === 'D') {
-            if (!s.shifts.includes('D') && !s.shifts.includes('DL'))
-              return false;
-          } else if (shift === 'N') {
-            if (!s.shifts.includes('N')) return false;
-          }
-          return (weeklyCounts[s.name][weekIndex] || 0) < s.maxPerWeek;
-        });
-
-        if (candidates.length > 0) {
-          const withProgress = candidates.map(s => ({
-            staff: s,
-            progress:
-              (monthlyCounts[s.name] || 0) / s.exactPerMonth,
-          }));
-          const minProgress = Math.min(
-            ...withProgress.map(c => c.progress)
-          );
-          const top = withProgress
-            .filter(c => c.progress === minProgress)
-            .sort(
-              (a, b) => a.staff.exactPerMonth - b.staff.exactPerMonth
-            );
-          const sameTarget = top.filter(
-            t => t.staff.exactPerMonth === top[0].staff.exactPerMonth
-          );
-          const chosen =
-            sameTarget[Math.floor(Math.random() * sameTarget.length)].staff;
-          let assignedShift: Assignment = shift;
-          if (shift === 'D') {
-            assignedShift = chosen.shifts.includes('D') ? 'D' : 'DL';
-          }
-          assignments[chosen.name][d] = assignedShift;
-          weeklyCounts[chosen.name][weekIndex] =
-            (weeklyCounts[chosen.name][weekIndex] || 0) + 1;
-          monthlyCounts[chosen.name] = (monthlyCounts[chosen.name] || 0) + 1;
-        } else {
-          console.warn(`${d}日 ${shift === 'D' ? 'D/DL' : shift} の候補者が0人です`);
-        }
-      });
     }
 
     staffList.forEach(s => {
-      if (monthlyCounts[s.name] !== s.exactPerMonth) {
-        console.warn(
-          `${s.name}：勤務日数が${monthlyCounts[s.name]}日で止まりました`
-        );
+      const remaining = s.exactPerMonth - (monthlyCounts[s.name] || 0);
+      if (remaining > 0) {
+        console.warn(`${s.name}：不足${remaining}日`);
       }
     });
 
@@ -274,7 +309,7 @@ function App() {
         </div>
         <div>
           <label>
-            最大勤務日数/月:
+            勤務日数/月:
             <input
               type="number"
               min={1}
@@ -328,7 +363,7 @@ function App() {
             働ける曜日: {staff.days.join('、') || 'なし'}<br />
             働ける時間帯: {staff.shifts.join('、') || 'なし'}<br />
             最大勤務回数/週: {staff.maxPerWeek}<br />
-            最大勤務日数/月: {staff.exactPerMonth}
+            勤務日数/月: {staff.exactPerMonth}
           </li>
         ))}
       </ul>
