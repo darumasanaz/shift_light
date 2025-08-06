@@ -17,6 +17,16 @@ const daysOfWeek = ['月', '火', '水', '木', '金', '土', '日'];
 const shiftOptions: Shift[] = ['E', 'D', 'DL', 'N'];
 const shiftOrder: ('E' | 'D' | 'N')[] = ['E', 'D', 'N'];
 
+const demandPerWeekday: Record<string, { E: number; D: number; N: number }> = {
+  月: { E: 1, D: 3, N: 2 },
+  火: { E: 1, D: 3, N: 2 },
+  水: { E: 1, D: 1, N: 2 },
+  木: { E: 1, D: 3, N: 2 },
+  金: { E: 1, D: 3, N: 2 },
+  土: { E: 1, D: 3, N: 2 },
+  日: { E: 1, D: 3, N: 2 },
+};
+
 const getDaysInMonth = (year: number, month: number) =>
   new Date(year, month + 1, 0).getDate();
 
@@ -92,6 +102,13 @@ function App() {
     const weeklyCounts: Record<string, Record<number, number>> = {};
     const monthlyCounts: Record<string, number> = {};
 
+    const remainingDemand: Record<number, { E: number; D: number; N: number }> = {};
+    for (let d = 1; d <= daysInMonth; d++) {
+      const w = weekdays[new Date(year, month, d).getDay()];
+      const demand = demandPerWeekday[w];
+      remainingDemand[d] = { E: demand.E, D: demand.D, N: demand.N };
+    }
+
     staffList.forEach(staff => {
       assignments[staff.name] = {};
       weeklyCounts[staff.name] = {};
@@ -112,7 +129,7 @@ function App() {
       });
     }
 
-    const assignShift = (d: number, shift: 'E' | 'D' | 'N') => {
+    const assignShift = (d: number, shift: 'E' | 'D' | 'N'): boolean => {
       const date = new Date(year, month, d);
       const weekIndex = getWeekIndex(date);
       const dayName = weekdays[date.getDay()];
@@ -148,7 +165,7 @@ function App() {
         return true;
       });
 
-      if (candidates.length === 0) return;
+      if (candidates.length === 0) return false;
 
       candidates.sort((a, b) => {
         const remA = a.exactPerMonth - (monthlyCounts[a.name] || 0);
@@ -180,28 +197,32 @@ function App() {
           (weeklyCounts[chosen.name][nextWeekIndex] || 0) + 1;
         monthlyCounts[chosen.name] = (monthlyCounts[chosen.name] || 0) + 1;
       }
+
+      if (remainingDemand[d][shift] > 0) {
+        remainingDemand[d][shift]--;
+      }
+
+      return true;
     };
 
     // Pass1
     for (let d = 1; d <= daysInMonth; d++) {
-      shiftOrder.forEach(shift => assignShift(d, shift));
+      shiftOrder.forEach(shift => {
+        while (remainingDemand[d][shift] > 0) {
+          if (!assignShift(d, shift)) break;
+        }
+      });
     }
 
-    // Pass2 if some staff still have remaining days
-    const hasRemaining = staffList.some(
-      s => s.exactPerMonth - (monthlyCounts[s.name] || 0) > 0
-    );
+    // Pass2 assign extra if staff still have remaining days
+    const staffHasRemaining = () =>
+      staffList.some(s => s.exactPerMonth - (monthlyCounts[s.name] || 0) > 0);
 
-    if (hasRemaining) {
+    if (staffHasRemaining()) {
       for (let d = 1; d <= daysInMonth; d++) {
         shiftOrder.forEach(shift => {
-          const already = staffList.some(s => {
-            const a = assignments[s.name][d];
-            if (shift === 'D') return a === 'D' || a === 'DL';
-            return a === shift;
-          });
-          if (!already) {
-            assignShift(d, shift);
+          while (staffHasRemaining()) {
+            if (!assignShift(d, shift)) break;
           }
         });
       }
@@ -213,6 +234,17 @@ function App() {
         console.warn(`${s.name}：不足${remaining}日`);
       }
     });
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      const label = formatLabel(new Date(year, month, d));
+      shiftOrder.forEach(shift => {
+        if (remainingDemand[d][shift] > 0) {
+          console.warn(
+            `${label}の${shift}シフトにあと${remainingDemand[d][shift]}人必要`
+          );
+        }
+      });
+    }
 
     return { assignments, labels };
   };
