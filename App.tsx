@@ -1,15 +1,19 @@
 import React, { useState } from 'react';
 
+type Shift = 'E' | 'D' | 'DL' | 'N';
+type Assignment = Shift | 'OFF' | '';
+
 type Staff = {
   name: string;
   dayOff: string;
   days: string[];
-  shifts: string[];
+  shifts: Shift[];
   maxPerWeek: number;
 };
 
 const daysOfWeek = ['月', '火', '水', '木', '金', '土', '日'];
-const shifts = ['早番', '遅番', '夜勤'];
+const shiftOptions: Shift[] = ['E', 'D', 'DL', 'N'];
+const shiftOrder: ('E' | 'D' | 'N')[] = ['E', 'D', 'N'];
 
 const getDaysInMonth = (year: number, month: number) =>
   new Date(year, month + 1, 0).getDate();
@@ -29,7 +33,7 @@ function App() {
   const [name, setName] = useState('');
   const [dayOff, setDayOff] = useState('');
   const [selectedDays, setSelectedDays] = useState<string[]>([]);
-  const [selectedShifts, setSelectedShifts] = useState<string[]>([]);
+  const [selectedShifts, setSelectedShifts] = useState<Shift[]>([]);
   const [maxPerWeek, setMaxPerWeek] = useState(5);
   const [staffList, setStaffList] = useState<Staff[]>([]);
 
@@ -39,7 +43,7 @@ function App() {
     );
   };
 
-  const handleShiftChange = (shift: string) => {
+  const handleShiftChange = (shift: Shift) => {
     setSelectedShifts(prev =>
       prev.includes(shift) ? prev.filter(s => s !== shift) : [...prev, shift]
     );
@@ -75,7 +79,7 @@ function App() {
       formatLabel(new Date(year, month, i + 1))
     );
 
-    const assignments: Record<string, Record<number, string>> = {};
+    const assignments: Record<string, Record<number, Assignment>> = {};
     const weeklyCounts: Record<string, Record<number, number>> = {};
     staffList.forEach(staff => {
       assignments[staff.name] = {};
@@ -87,22 +91,46 @@ function App() {
 
     for (let d = 1; d <= daysInMonth; d++) {
       const date = new Date(year, month, d);
-       const weekIndex = getWeekIndex(date);
+      const weekIndex = getWeekIndex(date);
       const dayName = weekdays[date.getDay()];
-      shifts.forEach(shift => {
-        const candidates = staffList.filter(
-          s =>
-            s.days.includes(dayName) &&
-            s.shifts.includes(shift) &&
-            assignments[s.name][d] === '' &&
-            (weeklyCounts[s.name][weekIndex] || 0) < s.maxPerWeek
-        );
+
+      if (d > 1) {
+        staffList.forEach(s => {
+          if (assignments[s.name][d - 1] === 'N') {
+            assignments[s.name][d] = 'OFF';
+          }
+        });
+      }
+
+      shiftOrder.forEach(shift => {
+        const candidates = staffList.filter(s => {
+          if (assignments[s.name][d] !== '') return false;
+          if (!s.days.includes(dayName)) return false;
+          const prev = assignments[s.name][d - 1];
+          if (shift === 'E') {
+            if (!s.shifts.includes('E')) return false;
+            if (prev === 'D' || prev === 'DL') return false;
+          } else if (shift === 'D') {
+            if (!s.shifts.includes('D') && !s.shifts.includes('DL'))
+              return false;
+          } else if (shift === 'N') {
+            if (!s.shifts.includes('N')) return false;
+          }
+          return (weeklyCounts[s.name][weekIndex] || 0) < s.maxPerWeek;
+        });
+
         if (candidates.length > 0) {
           const chosen =
             candidates[Math.floor(Math.random() * candidates.length)];
-          assignments[chosen.name][d] = shift;
+          let assignedShift: Assignment = shift;
+          if (shift === 'D') {
+            assignedShift = chosen.shifts.includes('D') ? 'D' : 'DL';
+          }
+          assignments[chosen.name][d] = assignedShift;
           weeklyCounts[chosen.name][weekIndex] =
             (weeklyCounts[chosen.name][weekIndex] || 0) + 1;
+        } else {
+          console.warn(`${d}日 ${shift === 'D' ? 'D/DL' : shift} の候補者が0人です`);
         }
       });
     }
@@ -111,7 +139,7 @@ function App() {
   };
 
   const exportShiftCSV = (
-    assignments: Record<string, Record<number, string>>,
+    assignments: Record<string, Record<number, Assignment>>,
     labels: string[]
   ) => {
     const header = ['名前', ...labels];
@@ -182,7 +210,7 @@ function App() {
         </div>
         <div>
           働ける時間帯:
-          {shifts.map(shift => (
+          {shiftOptions.map(shift => (
             <label key={shift} style={{ marginRight: '4px' }}>
               <input
                 type="checkbox"
